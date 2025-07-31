@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Image Classification App</title>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="container">
+    <div class="left">
+      <h2>Image Classification App</h2>
+
+      <div class="button-row">
+        <button onclick="init()">Load Model</button>
+      </div>
+
+      <h3>Live Prediction (Webcam)</h3>
+      <div class="button-row">
+        <button id="webcam-toggle" onclick="toggleWebcam()">Start Webcam</button>
+        <button onclick="clearAll()">Clear</button>
+      </div>
+      <p id="webcam-status"></p>
+      <div id="webcam-container"></div>
+
+      <h3>Upload Image</h3>
+      <div class="file-input-wrapper">
+        <label class="file-input-label" for="fileElem">Choose File</label>
+        <input type="file" id="fileElem" accept="image/*" onchange="handleFiles(this.files)">
+      </div>
+      <div id="drop-area" ondrop="handleDrop(event)" ondragover="highlight(event)" ondragleave="unhighlight(event)">
+        Drag & Drop Image Here
+      </div>
+      <img id="preview" src="#" style="display:none; max-width: 100%;" />
+    </div>
+
+    <div class="right">
+      <h3>Predictions</h3>
+      <div id="prediction-box">Model not loaded yet.</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+  <script>
+    const URL = "./my_model/";
+    let model, webcam, maxPredictions;
+    let usingWebcam = false;
+
+    async function init() {
+      const modelURL = URL + "model.json";
+      const metadataURL = URL + "metadata.json";
+      model = await tmImage.load(modelURL, metadataURL);
+      maxPredictions = model.getTotalClasses();
+      document.getElementById("prediction-box").innerText = "Model Loaded. Ready.";
+    }
+
+    async function toggleWebcam() {
+      if (!model) return alert("Please load the model first.");
+      const btn = document.getElementById("webcam-toggle");
+      const status = document.getElementById("webcam-status");
+
+      if (!usingWebcam) {
+        stopUploadPreview();
+        webcam = new tmImage.Webcam(300, 300, true);
+        await webcam.setup();
+        await webcam.play();
+        usingWebcam = true;
+        btn.textContent = "Stop Webcam";
+        status.textContent = "On webcam for live prediction";
+        document.getElementById("webcam-container").appendChild(webcam.canvas);
+        window.requestAnimationFrame(webcamLoop);
+      } else {
+        webcam.stop();
+        usingWebcam = false;
+        btn.textContent = "Start Webcam";
+        status.textContent = "";
+        webcam.canvas.remove();
+      }
+    }
+
+    async function webcamLoop() {
+      if (usingWebcam) {
+        webcam.update();
+        await predict(webcam.canvas);
+        window.requestAnimationFrame(webcamLoop);
+      }
+    }
+
+    function handleDrop(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleFiles(e.dataTransfer.files);
+    }
+
+    function highlight(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      document.getElementById("drop-area").classList.add("highlight");
+    }
+
+    function unhighlight(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      document.getElementById("drop-area").classList.remove("highlight");
+    }
+
+    function handleFiles(files) {
+      const file = files[0];
+      if (!file || !file.type.startsWith("image/")) return;
+      stopWebcamIfRunning();
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const img = document.getElementById("preview");
+        img.src = e.target.result;
+        img.style.display = "block";
+        img.onload = () => predict(img);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function predict(source) {
+      const prediction = await model.predict(source);
+      const box = document.getElementById("prediction-box");
+      box.innerHTML = "";
+      prediction.forEach(p => {
+        const div = document.createElement("div");
+        div.textContent = `${p.className}: ${(p.probability * 100).toFixed(2)}%`;
+        box.appendChild(div);
+      });
+    }
+
+    function stopWebcamIfRunning() {
+      if (usingWebcam && webcam) {
+        webcam.stop();
+        usingWebcam = false;
+        document.getElementById("webcam-toggle").textContent = "Start Webcam";
+        document.getElementById("webcam-status").textContent = "";
+        webcam.canvas.remove();
+      }
+    }
+
+    function stopUploadPreview() {
+      const img = document.getElementById("preview");
+      img.src = "";
+      img.style.display = "none";
+    }
+
+    function clearAll() {
+      stopWebcamIfRunning();
+      stopUploadPreview();
+      document.getElementById("prediction-box").innerText = "Cleared. Ready for input.";
+    }
+  </script>
+</body>
+</html>
